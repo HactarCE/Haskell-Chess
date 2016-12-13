@@ -1,7 +1,8 @@
-import Prelude hiding (putStr)
-import Data.ByteString.Char8 (putStr)
-import Data.ByteString.UTF8 (fromString)
+import Prelude
+import qualified Data.ByteString.Char8 as Char8
+import qualified Data.ByteString.UTF8 as UTF8
 import Data.List
+
 data PieceColor = White | Black deriving (Eq)
 data PieceType = Pawn | PawnCanDoubleStep | PawnEnPassant
                | Knight | Bishop | Rook | Queen | King deriving (Eq)
@@ -12,29 +13,33 @@ type Board = [[Square]]
 data GameState = GameState { board :: Board, turn :: PieceColor }
 
 instance Show Piece where
-  show (Piece White King)              = "?"
-  show (Piece White Queen)             = "?"
-  show (Piece White Rook)              = "?"
-  show (Piece White Bishop)            = "?"
-  show (Piece White Knight)            = "?"
-  show (Piece White Pawn)              = "?"
-  show (Piece White PawnCanDoubleStep) = "?"
-  show (Piece White PawnEnPassant)     = "?"
-  show (Piece Black King)              = "?"
-  show (Piece Black Queen)             = "?"
-  show (Piece Black Rook)              = "?"
-  show (Piece Black Bishop)            = "?"
-  show (Piece Black Knight)            = "?"
-  show (Piece Black Pawn)              = "?"
-  show (Piece Black PawnCanDoubleStep) = "?"
-  show (Piece Black PawnEnPassant)     = "?"
+  show (Piece White King)              = "♔"
+  show (Piece White Queen)             = "♕"
+  show (Piece White Rook)              = "♖"
+  show (Piece White Bishop)            = "♗"
+  show (Piece White Knight)            = "♘"
+  show (Piece White Pawn)              = "♙"
+  show (Piece White PawnCanDoubleStep) = "♙"
+  show (Piece White PawnEnPassant)     = "♙"
+  show (Piece Black King)              = "♚"
+  show (Piece Black Queen)             = "♛"
+  show (Piece Black Rook)              = "♜"
+  show (Piece Black Bishop)            = "♝"
+  show (Piece Black Knight)            = "♞"
+  show (Piece Black Pawn)              = "♟"
+  show (Piece Black PawnCanDoubleStep) = "♟"
+  show (Piece Black PawnEnPassant)     = "♟"
 instance Show Square where
   show (Square piece) = show piece
-  show (EmptySquare)  = " "
+  show (EmptySquare)  = "　"
 instance Show Pos where
   show (Pos col row) = ['a'..'h'] !! col : show (8 - row)
 prettyBoard :: Board -> String
 prettyBoard board = intercalate "\n" [unwords [show square | square <- row] | row <- board]
+
+prettyBoardWithCoords :: Board -> String
+prettyBoardWithCoords board = intercalate "\n" [show rowNum ++ " " ++ unwords [show square | square <- row] | (row, rowNum) <- zip board [8, 7..1]]
+  ++ "\n  " ++ intercalate (show EmptySquare) [char : "" | char <- ['a'..'h']]
 
 getSquare :: Board -> Pos -> Square
 getSquare board (Pos x y) = board !! y !! x
@@ -144,8 +149,8 @@ validMoves board pos
   | type_ == Knight                    = combineMoves basicKnightMoves color pos board
   | type_ == Bishop                    = combineMoves basicBishopMoves color pos board
   | type_ == Rook                      = combineMoves basicRookMoves color pos board
-  | type_ == Queen                     = combineMoves (basicBishopMoves ++ basicRookMoves) color pos board
-  | type_ == Rook                      = combineMoves (basicPawnMoves pawnMoveY) color pos board
+  | type_ == Queen                     = combineMoves basicQueenMoves color pos board
+  | type_ == King                      = combineMoves basicKingMoves color pos board
   | type_ == PawnCanDoubleStep         = combineMoves (pawnDoubleStepMoves pawnMoveY) color pos board
   | type_ `elem` [Pawn, PawnEnPassant] = combineMoves (basicPawnMoves pawnMoveY) color pos board
   where noMoves = [[Nothing | _ <- [0..7]] | _ <- [0..7]]
@@ -197,7 +202,7 @@ pieceMoveGlide offset color startPos testPos board =
 
 pieceMoveStep :: (Pos -> Pos) -> PieceMoveRule
 pieceMoveStep offset color pos testPos board =
-  if newPos == testPos && isNotColor color board pos
+  if newPos == testPos && isNotColor color board testPos
   then simpleMoveTo pos newPos board else Nothing
     where newPos = offset pos
 
@@ -211,7 +216,7 @@ pieceMoveStepIfCapture offset color pos testPos board =
 
 pieceMoveStepIfNotCapture :: (Pos -> Pos) -> PieceMoveRule
 pieceMoveStepIfNotCapture offset color pos testPos board =
-  if newPos == testPos && isEmpty board pos
+  if newPos == testPos && isEmpty board newPos
   then simpleMoveTo pos newPos board else Nothing
     where newPos = offset pos
 
@@ -248,6 +253,19 @@ isNotColor color board pos = isEmpty board pos
 -- endregion
 
 --region Movement rules
+basicKingMoves :: [PieceMoveRule]
+basicKingMoves = [
+                   pieceMoveStep $ offsetPos (-1) (-1),
+                   pieceMoveStep $ offsetPos 0 (-1),
+                   pieceMoveStep $ offsetPos 1 (-1),
+                   pieceMoveStep $ offsetPos 1 0,
+                   pieceMoveStep $ offsetPos 1 1,
+                   pieceMoveStep $ offsetPos 0 1,
+                   pieceMoveStep $ offsetPos (-1) 1,
+                   pieceMoveStep $ offsetPos (-1) 0
+                 ]
+basicQueenMoves :: [PieceMoveRule]
+basicQueenMoves = basicKnightMoves ++ basicRookMoves
 basicKnightMoves :: [PieceMoveRule]
 basicKnightMoves = [
                      pieceMoveStep $ offsetPos 1 2,
@@ -287,5 +305,27 @@ basicPawnMoves pawnMoveY = [
 
 --endregion
 
+showUTF8 :: String -> IO ()
+showUTF8 = Char8.putStrLn . UTF8.fromString
+
+showValidMoves :: Board -> Pos -> IO [()]
+showValidMoves board pos = sequence . concat $ [[case validMoves board pos !! y !! x of
+    Nothing -> putStr ""
+    Just future -> do
+      putStrLn ""
+      putStrLn $ (show pos) ++ " -> " ++ (show $ Pos x y)
+      showUTF8 $ prettyBoardWithCoords future
+  | x <- [0..7]] | y <- [0..7]]
+
+makeMove :: Board -> Pos -> Pos -> Board
+makeMove board pos (Pos x y) = case validMoves board pos !! y !! x of
+  Nothing -> error "Invalid move!"
+  Just newBoard -> newBoard
+
+main :: IO ()
 main = do
-  putStr . fromString . prettyBoard $ initialBoard
+  -- Char8.putStr . UTF8.fromString . prettyBoard $ initialBoard
+  let testPos = Pos 1 0
+  putStrLn $ "Valid moves for piece at " ++ (show testPos) ++ ":"
+  showValidMoves initialBoard testPos
+  return ()
